@@ -34,7 +34,7 @@ async function init(){
 function createIframe(url){
     let str = `<iframe id="pdf-js-viewer" src="web/viewer.html?file=${url}" title="webviewer" frameborder="0"></iframe>`;
     addLog("Create Iframe", url)
-    //document.getElementsByTagName("body")[0].innerHTML = str;
+    document.getElementsByTagName("body")[0].innerHTML = str;
 }
 
 function addLog(title, msg){
