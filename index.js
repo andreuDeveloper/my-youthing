@@ -7,7 +7,9 @@ function antiCorsURL(url){
 
 async function getPageDom(domain) {
     //Avoid cors
-    let rsp = await fetch(antiCorsURL(domain));
+    let url = antiCorsURL(domain)
+    addLog("Get Page", url);
+    let rsp = await fetch(url);
     let html = await rsp.text();
     var parser = new DOMParser();
     var doc = parser.parseFromString(html, 'text/html');
@@ -25,13 +27,22 @@ function getPDFUrlFromPage(page){
 async function init(){
     var page = await getPageDom(DOMAIN);
     var pdfUrl = getPDFUrlFromPage(page);
-    console.log("PDF", pdfUrl)
+    addLog("PDF url", pdfUrl);
     createIframe(antiCorsURL(pdfUrl));
 }
 
 function createIframe(url){
     let str = `<iframe id="pdf-js-viewer" src="web/viewer.html?file=${url}" title="webviewer" frameborder="0"></iframe>`;
-    document.getElementsByTagName("body")[0].innerHTML = str;
+    addLog("Create Iframe", url)
+    //document.getElementsByTagName("body")[0].innerHTML = str;
+}
+
+function addLog(title, msg){
+    console.info(title, msg);
+    let dom = document.querySelector(".logger ul");
+    let node = document.createElement("li");
+    node.innerHTML = `<b>${title}</b>&nbsp;-&nbsp;${msg}`
+    dom.appendChild(node);
 }
 
 init();

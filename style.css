@@ -8,3 +8,9 @@ iframe {
     height: 100vh;        /* Viewport-relative units */
     width: 100vw;
 }
+
+.logger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
