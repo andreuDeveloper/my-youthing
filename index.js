@@ -17,8 +17,8 @@ async function getPageDom(domain) {
 
 function getPDFUrlFromPage(page){
     let domA = page.querySelector(`.${ICON_CLASS} a`);
-    let tokens = domA.href.split(":");
-    return DOMAIN + tokens[tokens.length-1];
+    let tokens = domA.href.split("uploadPDF");
+    return DOMAIN + "/uploadPDF" + tokens[tokens.length-1];
 }
 
 
