@@ -9,8 +9,16 @@ iframe {
     width: 100vw;
 }
 
+iframe[hidden] {
+    display: none;
+}
+
 .logger {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+.logger[hidden] {
+    display: none;
 }

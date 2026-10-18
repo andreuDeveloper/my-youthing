@@ -1,48 +1,62 @@
-const DOMAIN = "http://youthing.es";
+const DOMAIN = "https://youthing.es";
 const ICON_CLASS = "iconoPdf";
 
 function antiCorsURL(url){
-    return `https://api.codetabs.com/v1/proxy/?quest=${url}`;
+    const params = new URLSearchParams({
+        key: "f218b9ab",
+        url: url,
+    });
+    return `https://corsproxy.io/?${params.toString()}`;
 }
 
 async function getPageDom(domain) {
-    //Avoid cors
-    let url = antiCorsURL(domain)
-    addLog("Get Page", url);
-    let rsp = await fetch(url);
-    let html = await rsp.text();
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(html, 'text/html');
-    return doc;
-}
+    const response = await fetch(antiCorsURL(domain));
+    if (!response.ok) {
+        throw new Error(`No se pudo cargar la web (${response.status}).`);
+    }
 
+    const html = await response.text();
+    const parser = new DOMParser();
+    return parser.parseFromString(html, "text/html");
+}
 
 function getPDFUrlFromPage(page){
-    let domA = page.querySelector(`.${ICON_CLASS} a`);
-    let tokens = domA.href.split("uploadPDF");
-    return DOMAIN + "/uploadPDF" + tokens[tokens.length-1];
+    const link = page.querySelector(`.${ICON_CLASS} a[href], a[href*="/uploadPDF/"]`);
+    if (!link) {
+        throw new Error("No se encontró ningún enlace al PDF en la web.");
+    }
+    return new URL(link.getAttribute("href"), DOMAIN).href;
 }
-
 
 async function init(){
-    var page = await getPageDom(DOMAIN);
-    var pdfUrl = getPDFUrlFromPage(page);
-    addLog("PDF url", pdfUrl);
-    createIframe(antiCorsURL(pdfUrl));
-}
+    const iframe = document.querySelector("#pdf-viewer");
+    const logger = document.querySelector(".logger");
+    iframe.hidden = true;
+    logger.hidden = false;
 
-function createIframe(url){
-    let str = `<iframe id="pdf-js-viewer" src="web/viewer.html?file=${url}" title="webviewer" frameborder="0"></iframe>`;
-    addLog("Create Iframe", url)
-    document.getElementsByTagName("body")[0].innerHTML = str;
+    try {
+        addLog("Estado", "Buscando el PDF...");
+        const page = await getPageDom(DOMAIN);
+        const pdfUrl = getPDFUrlFromPage(page);
+        addLog("Estado", `PDF encontrado. Abriendo (${pdfUrl})`);
+        iframe.src = pdfUrl;
+        iframe.hidden = false;
+        logger.hidden = true;
+    } catch (error) {
+        iframe.hidden = true;
+        addLog("Error", error.message || "No se pudo cargar el PDF.");
+        console.error(error);
+    }
 }
 
 function addLog(title, msg){
     console.info(title, msg);
-    let dom = document.querySelector(".logger ul");
-    let node = document.createElement("li");
-    node.innerHTML = `<b>${title}</b>&nbsp;-&nbsp;${msg}`
-    dom.appendChild(node);
+    const list = document.querySelector(".logger ul");
+    const item = document.createElement("li");
+    const label = document.createElement("b");
+    label.textContent = title;
+    item.append(label, document.createTextNode(` - ${msg}`));
+    list.appendChild(item);
 }
 
 init();
