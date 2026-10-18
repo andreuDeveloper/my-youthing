@@ -1,15 +1,11 @@
 const DOMAIN = "https://youthing.es";
 const ICON_CLASS = "iconoPdf";
-const PDF_CACHE_KEY = "youthing-pdf-cache";
-
-let currentPDFUrl = null;
 
 function antiCorsURL(url){
     const params = new URLSearchParams({
-        key: "f218b9ab",
         url: url,
     });
-    return `https://corsproxy.io/?${params.toString()}`;
+    return `https://cors-header-proxy.andreu-developer.workers.dev/?${params.toString()}`;
 }
 
 async function getPageDom(domain) {
@@ -31,44 +27,6 @@ function getPDFUrlFromPage(page){
     return new URL(link.getAttribute("href"), DOMAIN).href;
 }
 
-function getLocalDateKey(){
-    const now = new Date();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    return `${now.getFullYear()}-${month}-${day}`;
-}
-
-function readCachedPDFData(){
-    try {
-        const cached = localStorage.getItem(PDF_CACHE_KEY);
-        if (!cached) {
-            return null;
-        }
-
-        const entry = JSON.parse(cached);
-        const url = new URL(entry.url);
-        const categories = entry.categories;
-        if (entry.date === getLocalDateKey()
-            && url.origin === DOMAIN
-            && url.pathname.includes("/uploadPDF/")
-            && Array.isArray(categories)
-            && categories.length > 0
-            && categories.every((category) =>
-                typeof category.name === "string"
-                && category.name.trim()
-                && Number.isInteger(category.page)
-                && category.page > 0)) {
-            return { url: url.href, categories: categories };
-        }
-
-        localStorage.removeItem(PDF_CACHE_KEY);
-    } catch (error) {
-        addLog("Aviso", "No se pudo leer la caché local; se consultará la web.");
-        console.warn(error);
-    }
-    return null;
-}
-
 function getCategoriesFromPage(page){
     const categories = Array.from(
         page.querySelectorAll("#menu .marcador[data-pagina]"),
@@ -87,17 +45,17 @@ function getCategoriesFromPage(page){
     return categories;
 }
 
-function cachePDFData(url, categories){
-    try {
-        localStorage.setItem(PDF_CACHE_KEY, JSON.stringify({
-            date: getLocalDateKey(),
-            url: url,
-            categories: categories,
-        }));
-    } catch (error) {
-        addLog("Aviso", "No se pudieron guardar el PDF y las categorías en caché.");
-        console.warn(error);
+async function getPDFDocument(url){
+    const response = await fetch(antiCorsURL(url), {
+        method: "GET",
+        cache: "no-store",
+    });
+    if (!response.ok) {
+        throw new Error(`No se pudo descargar el PDF (${response.status}).`);
     }
+
+    const blob = await response.blob();
+    return window.pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
 }
 
 function renderCategories(categories){
@@ -110,15 +68,15 @@ function renderCategories(categories){
         const label = name.charAt(0).toLocaleUpperCase("es") + name.slice(1);
         const dropdownLink = document.createElement("a");
         dropdownLink.href = `#page=${page}`;
+        dropdownLink.dataset.page = String(page);
         dropdownLink.className = "dropdown-item category-link";
-        dropdownLink.dataset.pagina = String(page);
         dropdownLink.textContent = label;
         menu.appendChild(dropdownLink);
 
         const navbarLink = document.createElement("a");
         navbarLink.href = `#page=${page}`;
+        navbarLink.dataset.page = String(page);
         navbarLink.className = "nav-link px-2 text-light text-nowrap category-link";
-        navbarLink.dataset.pagina = String(page);
         navbarLink.textContent = label;
         links.appendChild(navbarLink);
     });
@@ -138,74 +96,92 @@ function updateNavbarLayout(){
     links.classList.toggle("d-none", needsDropdown);
 }
 
-function showPDFPage(page){
-    if (!currentPDFUrl) {
-        return;
+async function renderPDF(pdfDocument){
+    const viewer = document.querySelector("#pdf-viewer");
+    const viewerWidth = viewer.clientWidth - 32;
+    const outputScale = window.devicePixelRatio || 1;
+
+    for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+        const page = await pdfDocument.getPage(pageNumber);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = viewerWidth / baseViewport.width;
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+
+        if (!context) {
+            throw new Error("No se pudo preparar el visor de PDF.");
+        }
+
+        canvas.className = "pdf-page";
+        canvas.dataset.pageNumber = String(pageNumber);
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        viewer.appendChild(canvas);
+
+        await page.render({
+            canvasContext: context,
+            viewport: viewport,
+            transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
+        }).promise;
     }
-
-    const url = new URL(currentPDFUrl);
-    url.hash = `page=${page}#view=Fit&toolbar=0&navpanes=0&statusbar=0`;
-    const iframe = document.querySelector("#pdf-viewer");
-    iframe.src = "about:blank";
-    window.setTimeout(() => {
-        iframe.src = url.href;
-    }, 50);
-}
-
-function initNavigation(){
-    const navbar = document.querySelector(".navbar");
-
-    navbar.addEventListener("click", (event) => {
-        const link = event.target.closest(".category-link[data-pagina]");
-        if (!link) {
-            return;
-        }
-
-        event.preventDefault();
-        const page = Number(link.dataset.pagina);
-        if (!Number.isInteger(page) || page < 1) {
-            addLog("Error", "El número de página seleccionado no es válido.");
-            return;
-        }
-
-        showPDFPage(page);
-    });
-
-    window.addEventListener("resize", updateNavbarLayout);
 }
 
 async function init(){
-    const iframe = document.querySelector("#pdf-viewer");
+    const viewer = document.querySelector("#pdf-viewer");
     const logger = document.querySelector(".logger");
-    iframe.hidden = true;
+    viewer.hidden = true;
     logger.hidden = false;
 
     try {
-        let cachedData = readCachedPDFData();
-        if (cachedData) {
-            addLog("Estado", `PDF y categorías recuperados de la caché (${cachedData.url})`);
-        } else {
-            addLog("Estado", "Buscando el PDF y las categorías en la web...");
-            const page = await getPageDom(DOMAIN);
-            cachedData = {
-                url: getPDFUrlFromPage(page),
-                categories: getCategoriesFromPage(page),
-            };
-            cachePDFData(cachedData.url, cachedData.categories);
-            addLog("Estado", `PDF y categorías encontrados y guardados en caché (${cachedData.url})`);
+        if (!window.pdfjsLib) {
+            throw new Error("No se pudo cargar el visor de PDF.");
         }
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
-        renderCategories(cachedData.categories);
-        currentPDFUrl = cachedData.url;
-        showPDFPage(1);
-        iframe.hidden = false;
+        addLog("Estado", "Buscando el PDF en la web...");
+        const page = await getPageDom(DOMAIN);
+        const pdfURL = getPDFUrlFromPage(page);
+        const categories = getCategoriesFromPage(page);
+        const pdfDocument = await getPDFDocument(pdfURL);
+        viewer.hidden = false;
         logger.hidden = true;
+        await renderPDF(pdfDocument);
+        renderCategories(categories);
     } catch (error) {
-        iframe.hidden = true;
+        viewer.hidden = true;
+        logger.hidden = false;
         addLog("Error", error.message || "No se pudo cargar el PDF.");
         console.error(error);
     }
 }
+
+document.querySelector(".navbar").addEventListener("click", (event) => {
+    const link = event.target.closest(".category-link[data-page]");
+    if (!link) {
+        return;
+    }
+
+    event.preventDefault();
+    const page = Number(link.dataset.page);
+    if (!Number.isInteger(page) || page < 1) {
+        addLog("Error", "El número de página seleccionado no es válido.");
+        return;
+    }
+
+    const target = document.querySelector(`.pdf-page[data-page-number="${page}"]`);
+    if (!target) {
+        addLog("Error", "No se encontró la página seleccionada en el PDF.");
+        return;
+    }
+
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+window.addEventListener("resize", updateNavbarLayout);
 
 function addLog(title, msg){
     console.info(title, msg);
@@ -217,5 +193,4 @@ function addLog(title, msg){
     list.appendChild(item);
 }
 
-initNavigation();
 init();

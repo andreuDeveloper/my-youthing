@@ -7,17 +7,29 @@ body {
     font-family: system-ui, sans-serif;
 }
 
-iframe {
-    display: block;
+.pdf-viewer {
+    display: flex;
     flex: 1;
     min-height: 0;
     width: 100%;
-    background: #000;
-    border: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    overflow: auto;
+    padding: 16px;
+    background: #333;
 }
 
-iframe[hidden] {
+.pdf-viewer[hidden] {
     display: none;
+}
+
+.pdf-page {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    background: #fff;
+    box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 35%);
 }
 
 .logger {
@@ -69,12 +81,6 @@ iframe[hidden] {
     font-weight: 500;
 }
 
-.category-dropdown-menu .dropdown-item:hover,
-.category-dropdown-menu .dropdown-item:focus {
-    background: #e9f1fb;
-    color: #132b45;
-}
-
 #category-links .nav-link {
     border-radius: 0.4rem;
 }
@@ -82,4 +88,10 @@ iframe[hidden] {
 #category-links .nav-link:hover,
 #category-links .nav-link:focus {
     background: rgb(255 255 255 / 12%);
+}
+
+.category-dropdown-menu .dropdown-item:hover,
+.category-dropdown-menu .dropdown-item:focus {
+    background: #e9f1fb;
+    color: #132b45;
 }
